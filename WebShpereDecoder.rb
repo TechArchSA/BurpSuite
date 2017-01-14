@@ -6,6 +6,7 @@ APP_ID          = ''
 # Ruby requires
 require 'java'
 require 'openssl'
+require 'uri'
 # Java imports
 java_import javax.swing.JOptionPane
 # Burp imports
@@ -20,31 +21,23 @@ java_import 'burp.IHttpRequestResponse'
 
 
 module WebSphereHelper
-  # include IRequestInfo
-  include IHttpRequestResponse
   
-  # TODO
-  # Checks
-  #   - Headers: one or more of
-  #     Server:  WebSphere Application Server
-  #     IBM-Web2-Location:
-  #     X-Powered-By: Servlet/3.0
-  #
-  #   - URI
-  #     [Res] | Content-Location: /wps/contenthandler/pps/!ut/p/xxxxxx
-  #     [Req] | GET: /wps/contenthandler/pps/!ut/p/xxxxx
-  #     [Res] | Location: https://www.xxxx/wps/portal/Home/Home/!ut/p/z1/
-  #     [Req] | Referer: https://www.xxxx/wps/portal/Home/Home/!ut/p/z1/
-  def web_sphere_url?(info, is_request, callbacks='')
-    
-    if is_request
-      # info.methods.each {|m| callbacks.issueAlert("#{m.join("\n")}")}
-      # callbacks.issueAlert(info.methods)
-      
+  def setup_content_handler_url(url)
+    uri = URI.parse(url)
+    wps_path = uri.path.scan(/.*wps\//)
+    if uri.scheme.include? 'http'
+      request = "#{uri.scheme}://#{uri.host}/#{wps_path}/contenthandler?uri=state:#{uri.to_s}"
+    else
+      request = "#{uri.host}:#{uri.port}/#{wps_path}/contenthandler?uri=state:#{uri.to_s}"
     end
     
+    request
   end
   
+  def web_sphere_url?(url)
+    path = URI.parse(url).path
+    path.include?('/!ut/') ? true : false
+  end
   
 end
 
@@ -54,6 +47,7 @@ end
 
 module GUI
   DISPLAY_NAME = 'Web Sphere Decoder'
+  
   module Utils
   
     # showMessageDialog is an wrapper for 'JOptionPane.showMessageDialog' to popup a message box
@@ -69,7 +63,6 @@ module GUI
     #                         JOptionPane.ERROR_MESSAGE    = 3
     #                         JOptionPane.PLAIN_MESSAGE    = 4
     def showMessageDialog(options={})
-
       JOptionPane.showMessageDialog(nil, options[:message] , options[:title], options[:level])
     end
     
@@ -80,18 +73,23 @@ module GUI
     include IExtensionHelpers
     include WebSphereHelper
     include Utils
-  
+    #
+    # include IHttpRequestResponse
+    
     DISPLAY_NAME = 'WebSphereDecoder'
-  
-  
-    def initialize(callbacks, editable)
-      @callbacks = callbacks
-      # Burp Suite useful helpers:
-      @helper    = callbacks.get_helpers()
+    
+    
+    
+    def initialize(callbacks, controller, editable)
+      @extender_callbacks = callbacks
+      # IMessageEditorController
+      @controller = controller
+      # Burp Suite useful helpers: IExtensionHelpers
+      @helper             = callbacks.get_helpers
       # Create a Burp's plain text editor to use with this extension:
-      @txt_input = callbacks.create_text_editor()
+      @txt_input          = callbacks.create_text_editor
       # Indicates if the text editor is read-only or not:
-      @editable  = editable
+      @editable           = editable
     end
   
     # String IMessageEditorTab::getTabCaption();
@@ -109,53 +107,42 @@ module GUI
     end
   
     # boolean IMessageEditorTab::isEnabled(byte[] content, boolean isRequest)
-    #
     # isEnabled: this method is invoked each time Burp displays
     # a new message to check if the new custom tab should be displayed.
     # It should return a Boolean.
+    #
+    # @param [String] content The message that is about to be displayed, or a zero-length array if the existing message is to be cleared.
+    # @param [Boolean] is_request Indicates whether the message is a request or a response.
     def isEnabled(content, is_request)
     
       if content.nil? or content.empty?
         return false
       elsif is_request
-        info = @helper.analyzeRequest(content)
-        # showMessageDialog(message: 'is_request: request', title: 'Trace', level: 1)
-        # elsif is_response
-        info = @helper.analyzeResponse(content)
-        # showMessageDialog(message: 'is_response: response', title: 'Trace', level: 1)
+        info = @helper.analyzeRequest(@controller.getHttpService, content)
       else
-        # showMessageDialog(message: 'NON: NON', title: 'Trace', level: 1)
+        info = @helper.analyzeRequest(@controller.getHttpService, content)
       end
-    
-      # @callbacks.issueAlert('isEnabled')
-      # @callbacks.issueAlert content_type = info.getContentType
-      # @callbacks.issueAlert headers = info.get_headers
-      # @callbacks.issueAlert http_method = info.get_method
-      # @callbacks.issueAlert parameters = info.get_parameters
-      # @callbacks.issueAlert url = info.get_url
-    
-      # showMessageDialog(:title => 'info!', :message => "#{info}", :level => 1 )
-      # showMessageDialog(:title => 'is_request!', :message => "#{is_request}", :level => 1 )
-      # true
-      web_sphere_url?(info, is_request, @callbacks)
+      @url = info.getUrl
+      
+      web_sphere_url? @url.to_s
     end
   
     # void IMessageEditorTab::setMessage(byte[] content, boolean isRequest)
     #
     # setMessage: this method is invoked each time a new message is
     # displayed in your custom tab. This method will take care of processing
-    # the message. #setMessage method will fill it with the decrypted JSON into the displayed tab
-    # def setMessage(content, is_request)
-    #
-    # end
+    # the message.
+    def setMessage(content, is_request)
+      @txt_input.setText setup_content_handler_url(@url)
+    end
   
     # byte[] IMessageEditorTab::getMessage()
     #
     # getMessage: this method is invoked each time you leave the custom tab.
     # It returns an array of bytes that will be used by Burp (see below).
-    # def getMessage
-    #
-    # end
+    def getMessage
+      # @txt_input.setText "Hii getMessage"
+    end
   
     # boolean IMessageEditorTab::isModified()
     #
@@ -164,7 +151,7 @@ module GUI
     # It should return true if the message has been edited.
     # You simply use the value returned by #text_modified? of the text editor object
     def isModified
-      @callbacks.issueAlert("isModified") if @txt_input.text_modified?
+      @extender_callbacks.issueAlert("isModified") if @txt_input.text_modified?
     end
   end
 
@@ -178,39 +165,44 @@ class BurpExtender
   include GUI
   include GUI::Utils
   
-  attr_reader :callbacks
+  attr_reader :extender_callbacks
   
   # void IBurpExtender::registerExtenderCallbacks(IBurpExtenderCallbacks callbacks);
   def registerExtenderCallbacks(callbacks)
-    @callbacks = callbacks
+    @extender_callbacks = callbacks
     
-    @callbacks.setExtensionName(DISPLAY_NAME)              # Set Extension name
-    @callbacks.registerMessageEditorTabFactory(self)       # Register 'IMessageEditorTabFactory' interface
-    # @callbacks.registerExtenderCallbacks(self)             # Register 'IBurpExtenderCallbacks' interface
+    @extender_callbacks.setExtensionName(DISPLAY_NAME)              # Set Extension name
+    @extender_callbacks.registerMessageEditorTabFactory(self)       # Register 'IMessageEditorTabFactory' interface
     
-    greeting
+    # greeting
   end
   
   # IMessageEditorTab IMessageEditorTabFactory::createNewInstance(
   #   IMessageEditorController controller,
   #   boolean editable)
-  #
-  # #createNewInstance method. Because you will use the callbacks a lot, it is a good idea
+  # createNewInstance method. Because you will use the callbacks a lot, it is a good idea
   # to create an instance variable to easily access it inside JSONDecryptorTab
+  #
+  # @param [Object] controller IMessageEditorController
+  # @param [Object] editable  Indicates if the text editor is read-only or not
   def createNewInstance(controller, editable)
-    TabFactory.new(@callbacks, editable)
+    TabFactory.new(@extender_callbacks, controller, editable)
   end
   
   
   private
   def greeting
     
-    showMessageDialog({title: 'Welcome',
-                       message:
-                              "Thanks for installing #{DISPLAY_NAME}\n" +
-                                  "Burp Type: "    + "#{@callbacks.get_burp_version[0]}\n" +
-                                  "Burp Version: " + "#{@callbacks.get_burp_version[1]}.#{@callbacks.get_burp_version[2]}",
-                       level: 1})
+    type, major_v, minor_v = @extender_callbacks.get_burp_version
+    
+    showMessageDialog(
+        { title: 'Welcome',
+          message:
+                 "Thanks for installing #{DISPLAY_NAME}\n" +
+                  'Burp Type: '    + "#{type}\n" +
+                  'Burp Version: ' + "#{major_v}.#{minor_v}",
+          level: 1
+        })
   
   end
 end
