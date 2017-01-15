@@ -83,11 +83,12 @@ module GUI
     def initialize(callbacks, controller, editable)
       @extender_callbacks = callbacks
       # IMessageEditorController
-      @controller = controller
+      @controller         = controller
       # Burp Suite useful helpers: IExtensionHelpers
       @helper             = callbacks.get_helpers
       # Create a Burp's plain text editor to use with this extension:
-      @txt_input          = callbacks.create_text_editor
+      # ITextEditor from IBurpExtenderCallbacks.createTextEditor()
+      @text_input         = callbacks.create_text_editor
       # Indicates if the text editor is read-only or not:
       @editable           = editable
     end
@@ -103,7 +104,7 @@ module GUI
     #
     # component of the invoked tab, in our case, the component is (@txt_input: Text editor)
     def getUiComponent
-      @txt_input.getComponent() # get_component()
+      @text_input.getComponent() # get_component()
     end
   
     # boolean IMessageEditorTab::isEnabled(byte[] content, boolean isRequest)
@@ -133,7 +134,14 @@ module GUI
     # displayed in your custom tab. This method will take care of processing
     # the message.
     def setMessage(content, is_request)
-      @txt_input.setText setup_content_handler_url(@url)
+      # To keep our changes on the text when we leave the tab
+      return if @text_input.text_modified?
+      
+      # showMessageDialog(message: 'setMessage', title: 'setMessage', level: 1)
+      
+      @text_input.setText('setMessage 1')
+      @text_input.setText = 'setMessage 2' # setup_content_handler_url(@url)
+      @text_input.editable = @editable
     end
   
     # byte[] IMessageEditorTab::getMessage()
@@ -141,7 +149,8 @@ module GUI
     # getMessage: this method is invoked each time you leave the custom tab.
     # It returns an array of bytes that will be used by Burp (see below).
     def getMessage
-      # @txt_input.setText "Hii getMessage"
+      # showMessageDialog(message: 'getMessage', title: 'getMessage', level: 1)
+      is_request = @text_input.getText
     end
   
     # boolean IMessageEditorTab::isModified()
@@ -198,7 +207,7 @@ class BurpExtender
     showMessageDialog(
         { title: 'Welcome',
           message:
-                 "Thanks for installing #{DISPLAY_NAME}\n" +
+                  "Thanks for installing #{DISPLAY_NAME}\n" +
                   'Burp Type: '    + "#{type}\n" +
                   'Burp Version: ' + "#{major_v}.#{minor_v}",
           level: 1
