@@ -44,7 +44,6 @@ end
 #
 # BurpSuite GUI Factory
 #
-
 module GUI
   DISPLAY_NAME = 'Web Sphere Decoder'
   
@@ -77,8 +76,6 @@ module GUI
     # include IHttpRequestResponse
     
     DISPLAY_NAME = 'WebSphereDecoder'
-    
-    
     
     def initialize(callbacks, controller, editable)
       @extender_callbacks = callbacks
@@ -135,12 +132,14 @@ module GUI
     # the message.
     def setMessage(content, is_request)
       # To keep our changes on the text when we leave the tab
-      return if @text_input.text_modified?
+      return if @text_input.isTextModified
       
       # showMessageDialog(message: 'setMessage', title: 'setMessage', level: 1)
       
       @text_input.setText('setMessage 1')
       @text_input.setText = 'setMessage 2' # setup_content_handler_url(@url)
+      @text_input.text('setMessage 3')
+      @text_input.text = 'setMessage 4' # setup_content_handler_url(@url)
       @text_input.editable = @editable
     end
   
@@ -166,8 +165,9 @@ module GUI
 
 end
 
-
-
+#
+# BurpExtender, the main class to register all extensions and interfaces
+#
 class BurpExtender
   include IBurpExtender
   include IMessageEditorTabFactory
@@ -183,6 +183,7 @@ class BurpExtender
     @extender_callbacks.setExtensionName(DISPLAY_NAME)              # Set Extension name
     @extender_callbacks.registerMessageEditorTabFactory(self)       # Register 'IMessageEditorTabFactory' interface
     
+    puts extension_info
     # greeting
   end
   
@@ -200,7 +201,10 @@ class BurpExtender
   
   
   private
+  
+  # Popup window, welcome!
   def greeting
+    puts "Great! you've installed #{DISPLAY_NAME} successfully!"
     
     type, major_v, minor_v = @extender_callbacks.get_burp_version
     
@@ -212,7 +216,15 @@ class BurpExtender
                   'Burp Version: ' + "#{major_v}.#{minor_v}",
           level: 1
         })
-  
   end
+
+  # Extension information after installation
+  def extension_info
+    msg = "Extension: IBM WebShpere Rich-URL Decoder\n" +
+          "Author: KING SABRI | @KINGSABRI\n" +
+          "Github: https://github.com/TechArchSA/BurpSuite\n"
+    puts msg
+  end
+  
 end
  
