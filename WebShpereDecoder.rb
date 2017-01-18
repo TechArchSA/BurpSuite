@@ -1,18 +1,16 @@
 #
 #
+# Burp Suite Extension for Decoding IBM WebSphere Rich-URL
 # KING SABRI | @KINGSABRI
 #
-#
-VERSION         = '0.0.1 Alpha'
+VERSION         = '0.0.9'
 DEBUG           = true
 APP_ID          = ''
 
 # Ruby requires
 require 'java'
 require 'openssl'
-require 'uri'
 require 'open-uri'
-require 'net/http'
 require 'openssl'
 require 'rexml/document'
 # Java imports
@@ -27,7 +25,9 @@ java_import 'burp.IRequestInfo'
 java_import 'burp.IResponseInfo'
 java_import 'burp.IHttpRequestResponse'
 
-
+#
+# Punch of handy helpers
+#
 module WebSphereHelper
   
   # Setup given URL to request IBM portal contenthandler
@@ -43,22 +43,14 @@ module WebSphereHelper
     request
   end
   
+  # Checks if it's a WebSphere URL
   def web_sphere_url?(url)
     # showMessageDialog(message: url, title: 'web_sphere_url?', level: 1)
     path = URI.parse(url).path
     path.include?('/!ut/') ? true : false
   end
-
-  def send_get_request(url, headers='')
-    uri  = URI.parse(url)                           # Encode and parse URL
-    http = Net::HTTP.new(uri.host, uri.port)                    # Set HTTP instance
-    http.use_ssl = true if uri.port == 443                      # Enable SSL if https
-    http.verify_mode = OpenSSL::SSL::VERIFY_NONE                # Ignore validation
-    req  = Net::HTTP::Get.new(URI.unescape uri.path)                         # Set GET instance
-    headers.each {|k, v| req[k] = v} if headers.kind_of?(Hash)  # Set headers if given
-    res  = http.request(req)                                    # Send the GET request
-  end
-
+  
+  # Prettify XML format
   def xml_pretty_format(source)
     doc = REXML::Document.new(source)
     formatted = ''
@@ -114,6 +106,10 @@ module GUI
     end
 
   end
+  
+  #
+  # Tab functionality
+  #
   class TabFactory
   
     include IMessageEditorTab
@@ -169,16 +165,10 @@ module GUI
       end
 
       request_info(info)
-
-      # showMessageDialog(message: @request_info[:url], title: 'url', level: 1)
-      # showMessageDialog(message: @request_info[:header], title: 'header', level: 1)
-      # showMessageDialog(message: @request_info[:body], title: 'body', level: 1)
-      
-      @url = info.getUrl
       
       web_sphere_url? @request_info[:url]
     end
-  # require 'pp'
+    
     # void IMessageEditorTab::setMessage(byte[] content, boolean isRequest)
     #
     # setMessage: this method is invoked each time a new message is
@@ -198,8 +188,8 @@ module GUI
         puts "[!] Error:"
         puts e.message
         puts e.backtrace
-        # puts e.backtrace_locations
-        content = ''
+        
+        content = ''.unpack('c*').to_java(:byte)
       end
       
       @current_content     = content
@@ -245,7 +235,7 @@ class BurpExtender
     @extender_callbacks.registerMessageEditorTabFactory(self)       # Register 'IMessageEditorTabFactory' interface
     
     extension_info
-    # greeting
+    greeting
   end
   
   # IMessageEditorTab IMessageEditorTabFactory::createNewInstance(
