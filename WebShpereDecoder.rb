@@ -1,5 +1,9 @@
-
-VERSION         = '0.0.1 Alfa'
+#
+#
+# KING SABRI | @KINGSABRI
+#
+#
+VERSION         = '0.0.1 Alpha'
 DEBUG           = true
 APP_ID          = ''
 
@@ -7,9 +11,13 @@ APP_ID          = ''
 require 'java'
 require 'openssl'
 require 'uri'
+require 'open-uri'
+require 'net/http'
+require 'openssl'
+require 'rexml/document'
 # Java imports
 java_import javax.swing.JOptionPane
-# Burp imports
+# Burp Suite API imports
 java_import 'burp.IBurpExtender'
 java_import 'burp.IBurpExtenderCallbacks'
 java_import 'burp.IMessageEditorTabFactory'
@@ -22,21 +30,41 @@ java_import 'burp.IHttpRequestResponse'
 
 module WebSphereHelper
   
+  # Setup given URL to request IBM portal contenthandler
   def setup_content_handler_url(url)
     uri = URI.parse(url)
-    wps_path = uri.path.scan(/.*wps\//)
+    wps_path = uri.path.scan(/.*wps\//)[0]
     if uri.scheme.include? 'http'
-      request = "#{uri.scheme}://#{uri.host}/#{wps_path}/contenthandler?uri=state:#{uri.to_s}"
+      request = "#{uri.scheme}://#{uri.host}#{wps_path}contenthandler?uri=state:#{uri.to_s}"
     else
-      request = "#{uri.host}:#{uri.port}/#{wps_path}/contenthandler?uri=state:#{uri.to_s}"
+      request = "#{uri.host}:#{uri.port}#{wps_path}contenthandler?uri=state:#{uri.to_s}"
     end
     
     request
   end
   
   def web_sphere_url?(url)
+    # showMessageDialog(message: url, title: 'web_sphere_url?', level: 1)
     path = URI.parse(url).path
     path.include?('/!ut/') ? true : false
+  end
+
+  def send_get_request(url, headers='')
+    uri  = URI.parse(url)                           # Encode and parse URL
+    http = Net::HTTP.new(uri.host, uri.port)                    # Set HTTP instance
+    http.use_ssl = true if uri.port == 443                      # Enable SSL if https
+    http.verify_mode = OpenSSL::SSL::VERIFY_NONE                # Ignore validation
+    req  = Net::HTTP::Get.new(URI.unescape uri.path)                         # Set GET instance
+    headers.each {|k, v| req[k] = v} if headers.kind_of?(Hash)  # Set headers if given
+    res  = http.request(req)                                    # Send the GET request
+  end
+
+  def xml_pretty_format(source)
+    doc = REXML::Document.new(source)
+    formatted = ''
+    doc.write(formatted, 2)
+    
+    formatted.to_s
   end
   
 end
@@ -64,7 +92,27 @@ module GUI
     def showMessageDialog(options={})
       JOptionPane.showMessageDialog(nil, options[:message] , options[:title], options[:level])
     end
-    
+
+
+    def request_info(info)
+      url     = info.getUrl.to_s
+      headers = {}
+      info.getHeaders.map do |_headers|
+        if _headers.include? ': '
+          header = _headers.split
+          headers[header[0]] = header[1]
+        end
+      end
+      body    = info.getBodyOffset
+  
+      @request_info =
+          {
+              url:     url,
+              headers: headers,
+              body:    body
+          }
+    end
+
   end
   class TabFactory
   
@@ -72,8 +120,6 @@ module GUI
     include IExtensionHelpers
     include WebSphereHelper
     include Utils
-    #
-    # include IHttpRequestResponse
     
     DISPLAY_NAME = 'WebSphereDecoder'
     
@@ -88,6 +134,7 @@ module GUI
       @text_input         = callbacks.create_text_editor
       # Indicates if the text editor is read-only or not:
       @editable           = editable
+      @current_content    = ''
     end
   
     # String IMessageEditorTab::getTabCaption();
@@ -120,27 +167,42 @@ module GUI
       else
         info = @helper.analyzeRequest(@controller.getHttpService, content)
       end
+
+      request_info(info)
+
+      # showMessageDialog(message: @request_info[:url], title: 'url', level: 1)
+      # showMessageDialog(message: @request_info[:header], title: 'header', level: 1)
+      # showMessageDialog(message: @request_info[:body], title: 'body', level: 1)
+      
       @url = info.getUrl
       
-      web_sphere_url? @url.to_s
+      web_sphere_url? @request_info[:url]
     end
-  
+  # require 'pp'
     # void IMessageEditorTab::setMessage(byte[] content, boolean isRequest)
     #
     # setMessage: this method is invoked each time a new message is
     # displayed in your custom tab. This method will take care of processing
     # the message.
+    # To keep our changes on the text when we leave the tab
+    # return if @text_input.isTextModified
     def setMessage(content, is_request)
-      # To keep our changes on the text when we leave the tab
-      return if @text_input.isTextModified
+      begin
+        content = open(setup_content_handler_url(@request_info[:url])).read
+        content = xml_pretty_format(content)            # Enhance XML format
+        content = content.unpack('c*').to_java(:byte)   # Convert Ruby String to Java byte[]
+        
+        @text_input.setText(content)                    # setText accepts byte[] only
+        @text_input.editable = @editable                # Allow us to edit the message's content
+      rescue Exception => e
+        puts "[!] Error:"
+        puts e.message
+        puts e.backtrace
+        # puts e.backtrace_locations
+        content = ''
+      end
       
-      # showMessageDialog(message: 'setMessage', title: 'setMessage', level: 1)
-      
-      @text_input.setText('setMessage 1')
-      @text_input.setText = 'setMessage 2' # setup_content_handler_url(@url)
-      @text_input.text('setMessage 3')
-      @text_input.text = 'setMessage 4' # setup_content_handler_url(@url)
-      @text_input.editable = @editable
+      @current_content     = content
     end
   
     # byte[] IMessageEditorTab::getMessage()
@@ -148,8 +210,7 @@ module GUI
     # getMessage: this method is invoked each time you leave the custom tab.
     # It returns an array of bytes that will be used by Burp (see below).
     def getMessage
-      # showMessageDialog(message: 'getMessage', title: 'getMessage', level: 1)
-      is_request = @text_input.getText
+      @current_content
     end
   
     # boolean IMessageEditorTab::isModified()
@@ -159,10 +220,10 @@ module GUI
     # It should return true if the message has been edited.
     # You simply use the value returned by #text_modified? of the text editor object
     def isModified
-      @extender_callbacks.issueAlert("isModified") if @txt_input.text_modified?
+      @txt_input.isTextModified
     end
   end
-
+  
 end
 
 #
@@ -183,7 +244,7 @@ class BurpExtender
     @extender_callbacks.setExtensionName(DISPLAY_NAME)              # Set Extension name
     @extender_callbacks.registerMessageEditorTabFactory(self)       # Register 'IMessageEditorTabFactory' interface
     
-    puts extension_info
+    extension_info
     # greeting
   end
   
