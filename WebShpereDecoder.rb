@@ -65,7 +65,7 @@ end
 # BurpSuite GUI Factory
 #
 module GUI
-  DISPLAY_NAME = 'Web Sphere Decoder'
+  DISPLAY_NAME = 'WebSphere Decoder'
   
   module Utils
   
@@ -117,7 +117,7 @@ module GUI
     include WebSphereHelper
     include Utils
     
-    DISPLAY_NAME = 'WebSphereDecoder'
+    DISPLAY_NAME = 'WebSphere Decoder'
     
     def initialize(callbacks, controller, editable)
       @extender_callbacks = callbacks
