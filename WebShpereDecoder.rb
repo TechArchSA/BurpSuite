@@ -177,22 +177,35 @@ module GUI
     # To keep our changes on the text when we leave the tab
     # return if @text_input.isTextModified
     def setMessage(content, is_request)
+      tries = 3
+      
       begin
-        content = open(setup_content_handler_url(@request_info[:url])).read
+        content_handler_url = setup_content_handler_url(@request_info[:url])
+        content = open(content_handler_url).read
         content = xml_pretty_format(content)            # Enhance XML format
         content = content.unpack('c*').to_java(:byte)   # Convert Ruby String to Java byte[]
-        
-        @text_input.setText(content)                    # setText accepts byte[] only
+
         @text_input.editable = @editable                # Allow us to edit the message's content
+        @text_input.setText(content)                    # setText accepts byte[] only
+      
+      rescue OpenURI::HTTPRedirect => redirect
+        content_handler_url = setup_content_handler_url(redirect.uri)              # assigned from the "Location" response header
+        retry if (tries -= 1) > 0
+        puts "[ #{redirect.message} | Try: #{tries}] #{content_handler_url}".to_s.unpack('c*').to_java(:byte)
+      rescue OpenURI::HTTPError => e
+        error = "[ #{e} ] #{content_handler_url}".to_s.unpack('c*').to_java(:byte)
+        @text_input.setText(error)
+      rescue InvalidURIError => e
+        puts "[ Bad URL ] #{e}"
       rescue Exception => e
-        puts "[!] Error:"
+        puts '[!] Error:'
         puts e.message
         puts e.backtrace
         
         content = ''.unpack('c*').to_java(:byte)
       end
       
-      @current_content     = content
+      @current_content = content
     end
   
     # byte[] IMessageEditorTab::getMessage()
